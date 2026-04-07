@@ -1,0 +1,2 @@
+Main-Class: e24Pipe
+Class-Path: lib/bcprov-jdk15-145.jar lib/bouncycastle-1.20.jar lib/cryptix32.jar

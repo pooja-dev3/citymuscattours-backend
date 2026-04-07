@@ -11,7 +11,7 @@ class BaseModel {
         $this->db = getDB();
     }
 
-    protected function findById($id) {
+    public function findById($id) {
         $stmt = $this->db->prepare("SELECT * FROM {$this->table} WHERE {$this->primaryKey} = ?");
         $stmt->execute([$id]);
         return $stmt->fetch();
@@ -79,7 +79,7 @@ class BaseModel {
         return $stmt->execute([$id]);
     }
 
-    protected function findOne($conditions) {
+    public function findOne($conditions) {
         $where = [];
         $params = [];
         

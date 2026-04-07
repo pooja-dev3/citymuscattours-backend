@@ -1,0 +1,22 @@
+tran.currency=356
+consumer.language=USA
+tran.action=1
+merchant.receiptURL=http://localhost/iPAYPlugin/HostedPaymentResult.php
+merchant.errorURL=http://localhost/iPAYPlugin/HostedPaymentResult.php
+gateway.resource.path=D:\\PGDATA\\Config\\resources\\PROD\\FSS\\301\\
+gateway.terminal.tranportalid=ipay629253206350
+gateway.terminal.alias=301
+php.java.bridge.url=http://localhost:8080/JavaBridge/java/Java.inc
+
+resourcePath=D:\\PGDATA\\Config\\resources\\PROD\\FSS\\301\\
+aliasName=301
+currency=356
+language=USA
+action=1
+receiptURL=http://localhost/iPAYPlugin/HostedPaymentResult.php
+errorURL=http://localhost/iPAYPlugin/HostedPaymentResult.php
+udf1=Udf 1 Field
+udf2=Udf 2 Field
+udf4=Udf 4 Field
+udf5=Udf 5 Field
+udf3=10.44.71.168

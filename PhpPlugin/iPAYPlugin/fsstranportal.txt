@@ -1,0 +1,10 @@
+tran.currency=512
+consumer.language=USA
+tran.action=1
+merchant.receiptURL=http://localhost/frontend/php-frontend/php-backend/api/payments/omanNet/response
+merchant.errorURL=http://localhost/frontend/php-frontend/php-backend/api/payments/omanNet/response
+gateway.resource.path=C:\wamp64\www\frontend\php-frontend\php-backend\PhpPlugin\iPAYPlugin\
+gateway.terminal.tranportalid=ipay431798190144
+gateway.terminal.alias=HALADOC
+gateway.terminal.tranportalpassword=ahlibank@2024
+php.java.bridge.url=http://localhost:8080/JavaBridge/java/Java.inc

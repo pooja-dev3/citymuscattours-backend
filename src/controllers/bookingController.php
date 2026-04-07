@@ -40,7 +40,7 @@ function createBooking($req, $res) {
         'children' => $children,
         'travelers' => $adults + $children,
         'total_amount' => $totalAmount,
-        'currency' => $data['currency'] ?? 'INR',
+        'currency' => $data['currency'] ?? 'OMR',
         'status' => 'Pending',
         'payment_status' => 'pending',
         'contact_email' => $data['contactEmail'] ?? null,
@@ -60,95 +60,109 @@ function createBooking($req, $res) {
 }
 
 function createDummyBooking($req, $res) {
-    // Allow both admin and public access for dummy bookings
-    $userRole = $req['user']['role'] ?? null;
-    $userId = $req['user']['sub'] ?? null;
-    
-    $data = json_decode($req['body'], true);
-    
-    // Get package ID - required for public bookings
-    $packageId = $data['packageId'] ?? null;
-    if (!$packageId) {
-        // For admin, allow random package selection
-        if ($userRole === 'admin') {
-            $packageModel = new Package();
-            $allPackages = $packageModel->getAllPackages(10);
-            if (empty($allPackages)) {
-                throw new ApiError(400, 'No packages available. Please create a package first.');
+    try {
+        // Allow both admin and public access for dummy bookings
+        $userRole = $req['user']['role'] ?? null;
+        $userId = $req['user']['sub'] ?? null;
+        
+        $data = json_decode($req['body'], true);
+        
+        // Get package ID - required for public bookings
+        $packageId = $data['packageId'] ?? null;
+        if (!$packageId) {
+            // For admin, allow random package selection
+            if ($userRole === 'admin') {
+                $packageModel = new Package();
+                $allPackages = $packageModel->getAllPackages(10);
+                if (empty($allPackages)) {
+                    throw new ApiError(400, 'No packages available. Please create a package first.');
+                }
+                $randomPackage = $allPackages[array_rand($allPackages)];
+                $packageId = $randomPackage['id'];
+            } else {
+                throw new ApiError(400, 'Package ID is required');
             }
-            $randomPackage = $allPackages[array_rand($allPackages)];
-            $packageId = $randomPackage['id'];
-        } else {
-            throw new ApiError(400, 'Package ID is required');
         }
-    }
-    
-    $packageModel = new Package();
-    $package = $packageModel->getById($packageId);
-    
-    if (!$package) {
-        throw new ApiError(404, 'Package not found');
-    }
-    
-    // Use provided data or generate dummy data
-    $contactEmail = $data['contactEmail'] ?? null;
-    $contactPhone = $data['contactPhone'] ?? null;
-    $bookingDate = $data['date'] ?? null;
-    
-    if (!$contactEmail || !$contactPhone || !$bookingDate) {
-        // Generate dummy data if not provided (admin mode)
-        $dummyNames = ['John Smith', 'Sarah Johnson', 'Michael Brown', 'Emily Davis', 'David Wilson', 'Lisa Anderson', 'Robert Taylor', 'Jennifer Martinez'];
-        $dummyEmails = ['john.smith@example.com', 'sarah.j@example.com', 'michael.b@example.com', 'emily.d@example.com', 'david.w@example.com', 'lisa.a@example.com', 'robert.t@example.com', 'jennifer.m@example.com'];
-        $dummyPhones = ['+1-555-0101', '+1-555-0102', '+1-555-0103', '+1-555-0104', '+1-555-0105', '+1-555-0106', '+1-555-0107', '+1-555-0108'];
         
-        $randomIndex = array_rand($dummyNames);
-        $travelerName = $dummyNames[$randomIndex];
-        $contactEmail = $contactEmail ?? $dummyEmails[$randomIndex];
-        $contactPhone = $contactPhone ?? $dummyPhones[$randomIndex];
+        $packageModel = new Package();
+        $package = $packageModel->getById($packageId);
         
-        // Generate a future date (1-30 days from now) if not provided
-        if (!$bookingDate) {
-            $daysAhead = rand(1, 30);
-            $bookingDate = date('Y-m-d', strtotime("+{$daysAhead} days"));
+        if (!$package) {
+            throw new ApiError(404, 'Package not found');
         }
+        
+        // Use provided data or generate dummy data
+        $contactEmail = $data['contactEmail'] ?? null;
+        $contactPhone = $data['contactPhone'] ?? null;
+        $bookingDate = $data['date'] ?? null;
+        
+        if (!$contactEmail || !$contactPhone || !$bookingDate) {
+            // Generate dummy data if not provided (admin mode)
+            $dummyNames = ['John Smith', 'Sarah Johnson', 'Michael Brown', 'Emily Davis', 'David Wilson', 'Lisa Anderson', 'Robert Taylor', 'Jennifer Martinez'];
+            $dummyEmails = ['john.smith@example.com', 'sarah.j@example.com', 'michael.b@example.com', 'emily.d@example.com', 'david.w@example.com', 'lisa.a@example.com', 'robert.t@example.com', 'jennifer.m@example.com'];
+            $dummyPhones = ['+1-555-0101', '+1-555-0102', '+1-555-0103', '+1-555-0104', '+1-555-0105', '+1-555-0106', '+1-555-0107', '+1-555-0108'];
+            
+            $randomIndex = array_rand($dummyNames);
+            $travelerName = $dummyNames[$randomIndex];
+            $contactEmail = $contactEmail ?? $dummyEmails[$randomIndex];
+            $contactPhone = $contactPhone ?? $dummyPhones[$randomIndex];
+            
+            // Generate a future date (1-30 days from now) if not provided
+            if (!$bookingDate) {
+                $daysAhead = rand(1, 30);
+                $bookingDate = date('Y-m-d', strtotime("+{$daysAhead} days"));
+            }
+        }
+        
+        // Get package price with error handling
+        try {
+            $packagePrice = PriceHelper::getEffectivePrice($package);
+        } catch (Exception $priceError) {
+            error_log('PriceHelper error: ' . $priceError->getMessage());
+            // Fallback to a default price if price calculation fails
+            $packagePrice = 50.0; // Default price
+        }
+        
+        $adults = $data['adults'] ?? rand(1, 4);
+        $children = $data['children'] ?? rand(0, 2);
+        $totalAmount = $data['totalAmount'] ?? ($packagePrice * ($adults + ($children * 0.5))); // Children at 50% price
+        
+        // Always start as Pending with pending payment
+        $status = 'Pending';
+        $paymentStatus = 'pending';
+        
+        $bookingModel = new Booking();
+        $bookingData = [
+            'user_id' => $userId ?? 1, // Use logged-in user ID or default
+            'package_id' => $packageId,
+            'date' => $bookingDate,
+            'adults' => $adults,
+            'children' => $children,
+            'travelers' => $adults + $children,
+            'total_amount' => $totalAmount,
+            'currency' => $data['currency'] ?? 'OMR',
+            'status' => $status,
+            'payment_status' => $paymentStatus,
+            'contact_email' => $contactEmail,
+            'contact_phone' => $contactPhone,
+            'pickup_location' => $data['pickupLocation'] ?? 'Hotel pickup',
+            'notes' => $data['notes'] ?? "Dummy booking",
+            'created_at' => date('Y-m-d H:i:s'),
+            'updated_at' => date('Y-m-d H:i:s'),
+        ];
+        
+        $bookingId = $bookingModel->createBooking($bookingData);
+        $booking = $bookingModel->findWithPackage($bookingId);
+        
+        http_response_code(201);
+        header('Content-Type: application/json');
+        echo json_encode(['data' => $booking, 'message' => 'Dummy booking created successfully']);
+    } catch (Exception $e) {
+        error_log('createDummyBooking error: ' . $e->getMessage());
+        http_response_code(500);
+        header('Content-Type: application/json');
+        echo json_encode(['error' => $e->getMessage()]);
     }
-    
-    // Get package price
-    $packagePrice = PriceHelper::getEffectivePrice($package);
-    $adults = $data['adults'] ?? rand(1, 4);
-    $children = $data['children'] ?? rand(0, 2);
-    $totalAmount = $data['totalAmount'] ?? ($packagePrice * ($adults + ($children * 0.5))); // Children at 50% price
-    
-    // Always start as Pending with pending payment
-    $status = 'Pending';
-    $paymentStatus = 'pending';
-    
-    $bookingModel = new Booking();
-    $bookingData = [
-        'user_id' => $userId ?? 1, // Use logged-in user ID or default
-        'package_id' => $packageId,
-        'date' => $bookingDate,
-        'adults' => $adults,
-        'children' => $children,
-        'travelers' => $adults + $children,
-        'total_amount' => $totalAmount,
-        'currency' => $data['currency'] ?? 'INR',
-        'status' => $status,
-        'payment_status' => $paymentStatus,
-        'contact_email' => $contactEmail,
-        'contact_phone' => $contactPhone,
-        'pickup_location' => $data['pickupLocation'] ?? 'Hotel pickup',
-        'notes' => $data['notes'] ?? "Dummy booking",
-        'created_at' => date('Y-m-d H:i:s'),
-        'updated_at' => date('Y-m-d H:i:s'),
-    ];
-    
-    $bookingId = $bookingModel->createBooking($bookingData);
-    $booking = $bookingModel->findWithPackage($bookingId);
-    
-    http_response_code(201);
-    header('Content-Type: application/json');
-    echo json_encode(['data' => $booking, 'message' => 'Dummy booking created successfully']);
 }
 
 function createDummyPayment($req, $res) {
@@ -198,7 +212,7 @@ function createDummyPayment($req, $res) {
             'payment_intent_id' => $paymentIntentId,
             'payment_method' => $paymentMethod,
             'amount' => $booking['total_amount'],
-            'currency' => $booking['currency'] ?? 'INR',
+            'currency' => $booking['currency'] ?? 'OMR',
             'status' => 'paid',
         ],
         'message' => 'Dummy payment processed successfully. Booking is now confirmed.'
@@ -342,9 +356,29 @@ function checkBooking($req, $res) {
     }
 
     // Calculate pricing
+    // Children aged 0-4 are free, only charge for adults and children 5+
     $basePrice = PriceHelper::getEffectivePrice($package);
-    $totalAmount = round($basePrice * $travelers, 2);
-    $currency = 'INR';
+    
+    // Get children ages if provided, otherwise assume all children are 0-4 (free)
+    $childrenAges = $data['childrenAges'] ?? [];
+    $chargeableChildren = 0;
+    
+    if (!empty($childrenAges) && is_array($childrenAges)) {
+        // Count only children over 4 years old
+        foreach ($childrenAges as $age) {
+            $age = (int)$age;
+            if ($age > 4) {
+                $chargeableChildren++;
+            }
+        }
+    }
+    // If childrenAges not provided, assume all children are 0-4 (free)
+    // chargeableChildren remains 0
+    
+    // Calculate total: adults + chargeable children (over 4 years old)
+    $chargeableTravelers = $adults + $chargeableChildren;
+    $totalAmount = round($basePrice * $chargeableTravelers, 2);
+    $currency = 'OMR';
 
     $response = [
         'available' => $available,
@@ -359,7 +393,10 @@ function checkBooking($req, $res) {
         'travelers' => [
             'adults' => $adults,
             'children' => $children,
+            'chargeableChildren' => $chargeableChildren,
+            'freeChildren' => $children - $chargeableChildren, // Children 0-4
             'total' => $travelers,
+            'chargeableTotal' => $chargeableTravelers,
         ],
         'capacity' => [
             'total' => $totalCapacity > 0 ? $totalCapacity : null,
@@ -371,6 +408,14 @@ function checkBooking($req, $res) {
             'basePrice' => PriceHelper::formatForJson($basePrice),
             'totalAmount' => PriceHelper::formatForJson($totalAmount),
             'currency' => $currency,
+            'breakdown' => [
+                'adults' => $adults,
+                'adultsPrice' => PriceHelper::formatForJson($basePrice * $adults),
+                'chargeableChildren' => $chargeableChildren,
+                'chargeableChildrenPrice' => PriceHelper::formatForJson($basePrice * $chargeableChildren),
+                'freeChildren' => $children - $chargeableChildren,
+                'note' => $chargeableChildren < $children ? 'Children aged 0-4 are free' : null,
+            ],
         ],
     ];
 
@@ -387,6 +432,23 @@ function getAvailableOptions($req, $res) {
     $adults = (int)($data['adults'] ?? 1);
     $children = (int)($data['children'] ?? 0);
     $travelers = $adults + $children;
+    
+    // Get children ages if provided, otherwise assume all children are 0-4 (free)
+    $childrenAges = $data['childrenAges'] ?? [];
+    $chargeableChildren = 0;
+    
+    if (!empty($childrenAges) && is_array($childrenAges)) {
+        // Count only children over 4 years old
+        foreach ($childrenAges as $age) {
+            $age = (int)$age;
+            if ($age > 4) {
+                $chargeableChildren++;
+            }
+        }
+    }
+    // If childrenAges not provided, assume all children are 0-4 (free)
+    
+    $chargeableTravelers = $adults + $chargeableChildren;
 
     if (!$packageId) {
         throw new ApiError(400, 'Package ID is required');
@@ -435,7 +497,7 @@ function getAvailableOptions($req, $res) {
     }
 
     $basePrice = PriceHelper::getEffectivePrice($package);
-    $currency = 'INR';
+    $currency = 'OMR';
 
     // Process variants and check availability if date is provided
     $options = [];
@@ -542,10 +604,23 @@ function getAvailableOptions($req, $res) {
             'pickup' => (bool)($variant['pickup_included'] ?? true),
         ];
 
-        // If date is provided, calculate total for travelers
-        if ($date && $travelers > 0) {
-            $option['totalAmount'] = PriceHelper::formatForJson($price * $travelers);
+        // If date is provided, calculate total for chargeable travelers only
+        // Children 0-4 are free, only charge for adults and children 5+
+        if ($date && $chargeableTravelers > 0) {
+            $option['totalAmount'] = PriceHelper::formatForJson($price * $chargeableTravelers);
             $option['totalAmountLabel'] = number_format($option['totalAmount'], 2, '.', '') . ' ' . $currency;
+            
+            // Add pricing breakdown if there are children
+            if ($children > 0) {
+                $option['pricingBreakdown'] = [
+                    'adults' => $adults,
+                    'adultsPrice' => PriceHelper::formatForJson($price * $adults),
+                    'chargeableChildren' => $chargeableChildren,
+                    'chargeableChildrenPrice' => PriceHelper::formatForJson($price * $chargeableChildren),
+                    'freeChildren' => $children - $chargeableChildren,
+                    'note' => $chargeableChildren < $children ? 'Children aged 0-4 are free' : null,
+                ];
+            }
         }
 
         $options[] = $option;
@@ -567,7 +642,10 @@ function getAvailableOptions($req, $res) {
         $response['travelers'] = [
             'adults' => $adults,
             'children' => $children,
+            'chargeableChildren' => $chargeableChildren,
+            'freeChildren' => $children - $chargeableChildren, // Children 0-4
             'total' => $travelers,
+            'chargeableTotal' => $chargeableTravelers,
         ];
         $response['pricing'] = [
             'basePrice' => PriceHelper::formatForJson($basePrice),
@@ -582,7 +660,18 @@ function getAvailableOptions($req, $res) {
 
 function sendConfirmationEmail($req, $res) {
     require_once __DIR__ . '/../config/env.php';
-    require_once __DIR__ . '/../../vendor/autoload.php';
+    
+    // Load Composer autoloader
+    $autoloadPath = __DIR__ . '/../../vendor/autoload.php';
+    if (!file_exists($autoloadPath)) {
+        throw new ApiError(500, 'Composer dependencies not installed. Please run "composer install" on the server.');
+    }
+    require_once $autoloadPath;
+    
+    // Check if PHPMailer is available
+    if (!class_exists('\PHPMailer\PHPMailer\PHPMailer')) {
+        throw new ApiError(500, 'PHPMailer library not found. Please run "composer require phpmailer/phpmailer" on the server.');
+    }
     
     $data = json_decode($req['body'], true);
     
@@ -666,7 +755,7 @@ function generateBookingConfirmationEmail($details, $name) {
     $adults = $details['adults'] ?? 0;
     $children = $details['children'] ?? 0;
     $totalAmount = $details['totalAmount'] ?? 0;
-    $currency = $details['currency'] ?? 'INR';
+    $currency = $details['currency'] ?? 'OMR';
     $bookingRef = $details['bookingReference'] ?? 'N/A';
     
     // Format amount in OMR (same value from database, no conversion)

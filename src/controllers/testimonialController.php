@@ -2,6 +2,7 @@
 
 require_once __DIR__ . '/../models/Testimonial.php';
 require_once __DIR__ . '/../utils/ApiError.php';
+require_once __DIR__ . '/../utils/MultipartParser.php';
 
 function listTestimonials($req, $res) {
     $page = (int)($req['query']['page'] ?? 1);
@@ -56,26 +57,63 @@ function getTestimonial($req, $res) {
 
 function createTestimonial($req, $res) {
     // Check if this is a multipart/form-data request (file upload)
-    $isMultipart = !empty($_FILES);
+    // Router now populates $_POST and $_FILES for PUT requests with multipart/form-data
+    $isMultipart = !empty($_FILES) || !empty($_POST);
     
     if ($isMultipart) {
         // Handle FormData request
+        // Router now populates $_POST for PUT requests with multipart/form-data
         $data = $req['bodyData'] ?? $_POST;
         
-        // Handle avatar upload
-        if (!empty($_FILES['avatar']['name'])) {
-            $uploadDir = __DIR__ . '/../../public/uploads/testimonials';
-            if (!is_dir($uploadDir)) {
-                mkdir($uploadDir, 0755, true);
+        // Handle avatar upload - check for both single file and array structure
+        $hasFileUpload = false;
+        $file = null;
+        
+        if (!empty($_FILES['avatar'])) {
+            // Check if it's a single file or array structure
+            if (isset($_FILES['avatar']['name'])) {
+                if (is_array($_FILES['avatar']['name'])) {
+                    // Array structure - get first file
+                    if (!empty($_FILES['avatar']['name'][0])) {
+                        $file = [
+                            'name' => $_FILES['avatar']['name'][0],
+                            'type' => $_FILES['avatar']['type'][0],
+                            'tmp_name' => $_FILES['avatar']['tmp_name'][0],
+                            'error' => $_FILES['avatar']['error'][0],
+                            'size' => $_FILES['avatar']['size'][0]
+                        ];
+                        $hasFileUpload = true;
+                    }
+                } else {
+                    // Single file structure
+                    if (!empty($_FILES['avatar']['name'])) {
+                        $file = $_FILES['avatar'];
+                        $hasFileUpload = true;
+                    }
+                }
             }
+        }
+        
+        if ($hasFileUpload && $file) {
+            $fileError = $file['error'] ?? UPLOAD_ERR_OK;
             
-            $file = $_FILES['avatar'];
-            $extension = pathinfo($file['name'], PATHINFO_EXTENSION);
-            $filename = uniqid('avatar_', true) . ($extension ? ".{$extension}" : '');
-            $targetPath = $uploadDir . '/' . $filename;
-            
-            if (move_uploaded_file($file['tmp_name'], $targetPath)) {
-                $data['avatar'] = '/uploads/testimonials/' . $filename;
+            if ($fileError === UPLOAD_ERR_OK || $fileError === 0) {
+                $uploadDir = __DIR__ . '/../../public/uploads/testimonials';
+                if (!is_dir($uploadDir)) {
+                    mkdir($uploadDir, 0755, true);
+                }
+                
+                $extension = pathinfo($file['name'], PATHINFO_EXTENSION);
+                $filename = uniqid('avatar_', true) . ($extension ? ".{$extension}" : '');
+                $targetPath = $uploadDir . '/' . $filename;
+                
+                // Use saveUploadedFileOrTemp to handle both regular uploads and manually parsed files from PUT requests
+                if (saveUploadedFileOrTemp($file['tmp_name'], $targetPath)) {
+                    $data['avatar'] = '/uploads/testimonials/' . $filename;
+                    error_log("createTestimonial - Avatar uploaded successfully: " . $data['avatar']);
+                } else {
+                    error_log("createTestimonial - Failed to save uploaded file. tmp_name: " . $file['tmp_name'] . ", target: " . $targetPath);
+                }
             }
         }
     } else {
@@ -129,38 +167,108 @@ function updateTestimonial($req, $res) {
     }
 
     // Check if this is a multipart/form-data request (file upload)
-    $isMultipart = !empty($_FILES);
+    // Router now populates $_POST and $_FILES for PUT requests with multipart/form-data
+    $isMultipart = !empty($_FILES) || !empty($_POST);
     
     if ($isMultipart) {
         // Handle FormData request
+        // Router now populates $_POST for PUT requests with multipart/form-data
         $data = $req['bodyData'] ?? $_POST;
         
-        // Handle avatar upload
-        if (!empty($_FILES['avatar']['name'])) {
-            $uploadDir = __DIR__ . '/../../public/uploads/testimonials';
-            if (!is_dir($uploadDir)) {
-                mkdir($uploadDir, 0755, true);
+        // Get avatar value from form data before we modify $data
+        $avatarFromForm = $data['avatar'] ?? null;
+        
+        // Remove avatar field from data initially to prevent overwriting with empty/null values
+        // We'll add it back only if we have a new value
+        unset($data['avatar']);
+        
+        // Handle avatar upload - priority: new file upload > explicit avatar URL > keep existing
+        // Check for file upload - handle both single file and array structure
+        $hasFileUpload = false;
+        $file = null;
+        
+        // Debug: Log $_FILES structure
+        error_log("updateTestimonial - Request method: " . ($req['method'] ?? 'unknown'));
+        error_log("updateTestimonial - Content-Type: " . ($req['headers']['content-type'] ?? 'not set'));
+        error_log("updateTestimonial - \$_FILES structure: " . json_encode($_FILES));
+        error_log("updateTestimonial - \$_POST structure: " . json_encode($_POST));
+        error_log("updateTestimonial - bodyData: " . json_encode($req['bodyData'] ?? []));
+        
+        if (!empty($_FILES['avatar'])) {
+            // Check if it's a single file or array structure
+            if (isset($_FILES['avatar']['name'])) {
+                if (is_array($_FILES['avatar']['name'])) {
+                    // Array structure - get first file
+                    if (!empty($_FILES['avatar']['name'][0])) {
+                        $file = [
+                            'name' => $_FILES['avatar']['name'][0],
+                            'type' => $_FILES['avatar']['type'][0],
+                            'tmp_name' => $_FILES['avatar']['tmp_name'][0],
+                            'error' => $_FILES['avatar']['error'][0],
+                            'size' => $_FILES['avatar']['size'][0]
+                        ];
+                        $hasFileUpload = true;
+                    }
+                } else {
+                    // Single file structure
+                    if (!empty($_FILES['avatar']['name'])) {
+                        $file = $_FILES['avatar'];
+                        $hasFileUpload = true;
+                    }
+                }
             }
+        }
+        
+        if ($hasFileUpload && $file) {
+            // Check file error - for manually parsed files, error might not be set or might be 0
+            $fileError = $file['error'] ?? UPLOAD_ERR_OK;
             
-            $file = $_FILES['avatar'];
-            $extension = pathinfo($file['name'], PATHINFO_EXTENSION);
-            $filename = uniqid('avatar_', true) . ($extension ? ".{$extension}" : '');
-            $targetPath = $uploadDir . '/' . $filename;
-            
-            if (move_uploaded_file($file['tmp_name'], $targetPath)) {
-                $data['avatar'] = '/uploads/testimonials/' . $filename;
+            if ($fileError === UPLOAD_ERR_OK || $fileError === 0) {
+                // New file uploaded
+                $uploadDir = __DIR__ . '/../../public/uploads/testimonials';
+                if (!is_dir($uploadDir)) {
+                    mkdir($uploadDir, 0755, true);
+                }
+                
+                $extension = pathinfo($file['name'], PATHINFO_EXTENSION);
+                $filename = uniqid('avatar_', true) . ($extension ? ".{$extension}" : '');
+                $targetPath = $uploadDir . '/' . $filename;
+                
+                error_log("updateTestimonial - Attempting to save file. tmp_name: " . $file['tmp_name'] . ", target: " . $targetPath);
+                error_log("updateTestimonial - File details: name=" . $file['name'] . ", size=" . ($file['size'] ?? 'unknown') . ", error=" . $fileError);
+                
+                // Use saveUploadedFileOrTemp to handle both regular uploads and manually parsed files from PUT requests
+                if (saveUploadedFileOrTemp($file['tmp_name'], $targetPath)) {
+                    $data['avatar'] = '/uploads/testimonials/' . $filename;
+                    error_log("updateTestimonial - Avatar uploaded successfully: " . $data['avatar']);
+                } else {
+                    error_log("updateTestimonial - Failed to save uploaded file. tmp_name: " . $file['tmp_name'] . ", target: " . $targetPath);
+                    error_log("updateTestimonial - File exists: " . (file_exists($file['tmp_name']) ? 'yes' : 'no'));
+                    error_log("updateTestimonial - Target dir writable: " . (is_writable($uploadDir) ? 'yes' : 'no'));
+                }
+            } else {
+                error_log("updateTestimonial - File upload error: " . $fileError . " (UPLOAD_ERR_OK=" . UPLOAD_ERR_OK . ")");
             }
-        } elseif (!isset($data['avatar'])) {
-            // Keep existing avatar if not provided
-            $data['avatar'] = $testimonial['avatar'] ?? null;
+        } elseif (!empty($avatarFromForm) && is_string($avatarFromForm) && trim($avatarFromForm) !== '') {
+            // Explicit avatar URL provided in form data (not empty)
+            $data['avatar'] = trim($avatarFromForm);
+            error_log("updateTestimonial - Using avatar URL from form: " . $data['avatar']);
+        } else {
+            // No new file and no valid avatar URL provided
+            // Don't include avatar in $data - this preserves the existing avatar in database
+            // The update will not modify the avatar field
+            error_log("updateTestimonial - No avatar update, preserving existing avatar");
         }
     } else {
         // Handle JSON request
         $data = json_decode($req['body'], true);
         
-        // If avatar is not provided in JSON, keep existing avatar
+        // If avatar is not provided in JSON, don't update it (keeps existing)
         if (!isset($data['avatar'])) {
-            $data['avatar'] = $testimonial['avatar'] ?? null;
+            unset($data['avatar']);
+        } elseif ($data['avatar'] === '' || $data['avatar'] === null) {
+            // Explicitly set to empty/null - allow it to remove avatar
+            $data['avatar'] = null;
         }
     }
 
@@ -172,6 +280,10 @@ function updateTestimonial($req, $res) {
     if (isset($data['rating']) && ($data['rating'] < 1 || $data['rating'] > 5)) {
         throw new ApiError(400, 'Rating must be between 1 and 5');
     }
+
+    // Debug: Log what's being updated
+    error_log("updateTestimonial - Data being updated: " . json_encode($data));
+    error_log("updateTestimonial - Avatar field in data: " . (isset($data['avatar']) ? $data['avatar'] : 'NOT SET'));
 
     $testimonialModel->updateTestimonial($id, $data);
     $updatedTestimonial = $testimonialModel->getById($id);

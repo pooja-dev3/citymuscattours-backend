@@ -1,5 +1,7 @@
 <?php
 
+require_once __DIR__ . '/../utils/MultipartParser.php';
+
 class Router {
     private $routes = [];
 
@@ -107,14 +109,33 @@ class Router {
                 // For PUT requests with multipart/form-data, $_POST might be empty
                 elseif (strpos($contentType, 'multipart/form-data') !== false || strpos($contentType, 'application/x-www-form-urlencoded') !== false) {
                     // For POST requests, $_POST is automatically populated
-                    // For PUT requests, we need to parse manually or rely on $_POST if available
                     if (!empty($_POST)) {
                         $bodyData = $_POST;
                     } else {
-                        // For PUT requests, try to parse form-urlencoded data from raw body
-                        // Note: multipart/form-data parsing is complex, so we rely on $_POST being populated
-                        // If $_POST is empty for PUT, we'll need to handle it in the controller
-                        $bodyData = [];
+                        // For PUT requests with multipart/form-data, we need to parse manually
+                        if (strpos($contentType, 'multipart/form-data') !== false && ($method === 'PUT' || $method === 'PATCH')) {
+                            // Extract boundary from Content-Type header
+                            if (preg_match('/boundary=([^;]+)/i', $contentType, $matches)) {
+                                $boundary = trim($matches[1], " \t\n\r\0\x0B\"'");
+                                $parsed = parseMultipartFormData($rawBody, $boundary);
+                                $bodyData = $parsed['data'];
+                                
+                                // Populate $_FILES for PUT/PATCH requests with file uploads
+                                if (!empty($parsed['files'])) {
+                                    populateFilesFromMultipart($parsed['files']);
+                                }
+                                
+                                // Also populate $_POST for consistency
+                                foreach ($bodyData as $key => $value) {
+                                    $_POST[$key] = $value;
+                                }
+                            } else {
+                                $bodyData = [];
+                            }
+                        } else {
+                            // For form-urlencoded data, try parsing from raw body
+                            parse_str($rawBody, $bodyData);
+                        }
                     }
                 }
                 // Try to parse as JSON anyway (in case Content-Type is missing)

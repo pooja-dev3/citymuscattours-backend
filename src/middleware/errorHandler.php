@@ -1,10 +1,17 @@
 <?php
+// Suppress HTML error output - we always return JSON
+ini_set('display_errors', 0);
 
 require_once __DIR__ . '/../utils/ApiError.php';
 require_once __DIR__ . '/../utils/logger.php';
 require_once __DIR__ . '/../config/env.php';
 
 function errorHandler($err, $req, $res) {
+    // Suppress any HTML error output - we always return JSON
+    if (ob_get_level()) {
+        ob_clean();
+    }
+    
     $error = $err instanceof ApiError ? $err : new ApiError(500, $err->getMessage());
     $statusCode = $error->statusCode;
     

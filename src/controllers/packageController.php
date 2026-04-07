@@ -110,29 +110,37 @@ if (!function_exists('parseMultipartFormDataForPackage')) {
 
 if (!function_exists('saveUploadedFileOrTemp')) {
     function saveUploadedFileOrTemp($tmpPath, $targetPath) {
+        $success = false;
+        
         // If PHP recognizes it as a genuine uploaded file, use move_uploaded_file
         if (is_uploaded_file($tmpPath)) {
-            return move_uploaded_file($tmpPath, $targetPath);
-        }
+            $success = move_uploaded_file($tmpPath, $targetPath);
+        } else {
+            // Otherwise fallback to rename/copy for manually extracted temp files
+            if (!file_exists($tmpPath)) {
+                error_log("saveUploadedFileOrTemp - Temp file does not exist: " . $tmpPath);
+                return false;
+            }
 
-        // Otherwise fallback to rename/copy for manually extracted temp files
-        if (!file_exists($tmpPath)) {
-            error_log("saveUploadedFileOrTemp - Temp file does not exist: " . $tmpPath);
-            return false;
+            if (@rename($tmpPath, $targetPath)) {
+                $success = true;
+            } elseif (@copy($tmpPath, $targetPath)) {
+                // Final fallback - copy then unlink
+                @unlink($tmpPath);
+                $success = true;
+            } else {
+                error_log("saveUploadedFileOrTemp - Failed to move temp file to target: " . $targetPath);
+                return false;
+            }
         }
-
-        if (@rename($tmpPath, $targetPath)) {
-            return true;
+        
+        // Set file permissions to 644 (readable by owner, group, and others)
+        // This ensures the file is accessible via web server
+        if ($success && file_exists($targetPath)) {
+            @chmod($targetPath, 0644);
         }
-
-        // Final fallback - copy then unlink
-        if (@copy($tmpPath, $targetPath)) {
-            @unlink($tmpPath);
-            return true;
-        }
-
-        error_log("saveUploadedFileOrTemp - Failed to move temp file to target: " . $targetPath);
-        return false;
+        
+        return $success;
     }
 }
 
@@ -608,6 +616,8 @@ function createPackage($req, $res) {
             $targetPath = $uploadDir . '/' . $filename;
             
             if (move_uploaded_file($galleryFiles['tmp_name'], $targetPath)) {
+                // Set file permissions to 644 (readable by owner, group, and others)
+                @chmod($targetPath, 0644);
                 $galleryPaths[] = '/uploads/packages/' . $filename;
             }
         }

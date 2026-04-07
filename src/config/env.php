@@ -9,9 +9,16 @@ class Env {
         }
 
         $envFile = __DIR__ . '/../../.env';
+        
         if (file_exists($envFile)) {
-            $dotenv = Dotenv\Dotenv::createImmutable(__DIR__ . '/../..');
-            $dotenv->load();
+            // Check if Dotenv class is available (Composer autoloader must be loaded first)
+            if (class_exists('Dotenv\Dotenv')) {
+                $dotenv = Dotenv\Dotenv::createImmutable(__DIR__ . '/../..');
+                $dotenv->load();
+            } else {
+                // Fallback: manually parse .env file if Dotenv is not available
+                self::parseEnvFile($envFile);
+            }
         }
 
         $requiredVars = ['DB_HOST', 'DB_NAME', 'DB_USER', 'JWT_SECRET', 'CLIENT_URL'];
@@ -56,6 +63,24 @@ class Env {
                 'secretKey' => $_ENV['STRIPE_SECRET_KEY'] ?? getenv('STRIPE_SECRET_KEY') ?? '',
                 'webhookSecret' => $_ENV['STRIPE_WEBHOOK_SECRET'] ?? getenv('STRIPE_WEBHOOK_SECRET') ?? '',
             ],
+            'mpgs' => [
+                'merchantId' => $_ENV['MPGS_MERCHANT_ID'] ?? getenv('MPGS_MERCHANT_ID') ?? 'TEST10000000',
+                'username' => $_ENV['MPGS_USERNAME'] ?? getenv('MPGS_USERNAME') ?? 'merchant.TEST10000000',
+                'password' => $_ENV['MPGS_PASSWORD'] ?? getenv('MPGS_PASSWORD') ?? 'dbe7cc389792f58c7e5850ab31673abe',
+                'verifySsl' => $_ENV['MPGS_VERIFY_SSL'] ?? getenv('MPGS_VERIFY_SSL') ?? true,
+            ],
+            'omanNet' => [
+                'resourcePath' => $_ENV['OMANNET_RESOURCE_PATH'] ?? getenv('OMANNET_RESOURCE_PATH') ?? '',
+                'alias' => $_ENV['OMANNET_MERCHANT_ALIAS'] ?? getenv('OMANNET_MERCHANT_ALIAS') ?? '',
+                'tranportalId' => $_ENV['OMANNET_TRANPORTAL_ID'] ?? getenv('OMANNET_TRANPORTAL_ID') ?? '',
+                'tranportalPassword' => $_ENV['OMANNET_TRANPORTAL_PASSWORD'] ?? getenv('OMANNET_TRANPORTAL_PASSWORD') ?? '',
+                'currency' => $_ENV['OMANNET_CURRENCY'] ?? getenv('OMANNET_CURRENCY') ?? '512',
+                'language' => $_ENV['OMANNET_LANGUAGE'] ?? getenv('OMANNET_LANGUAGE') ?? 'USA',
+                'action' => $_ENV['OMANNET_ACTION'] ?? getenv('OMANNET_ACTION') ?? '1',
+                'receiptURL' => $_ENV['OMANNET_RECEIPT_URL'] ?? getenv('OMANNET_RECEIPT_URL') ?? '',
+                'errorURL' => $_ENV['OMANNET_ERROR_URL'] ?? getenv('OMANNET_ERROR_URL') ?? '',
+                'phpJavaBridgeUrl' => $_ENV['OMANNET_PHP_JAVA_BRIDGE_URL'] ?? getenv('OMANNET_PHP_JAVA_BRIDGE_URL') ?? '',
+            ],
         ];
 
         return self::$config;
@@ -67,6 +92,37 @@ class Env {
             return $config;
         }
         return $config[$key] ?? null;
+    }
+
+    /**
+     * Fallback method to parse .env file manually if Dotenv is not available
+     */
+    private static function parseEnvFile($filePath) {
+        $lines = file($filePath, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+        
+        foreach ($lines as $line) {
+            // Skip comments
+            if (strpos(trim($line), '#') === 0) {
+                continue;
+            }
+            
+            // Parse KEY=VALUE format
+            if (strpos($line, '=') !== false) {
+                list($key, $value) = explode('=', $line, 2);
+                $key = trim($key);
+                $value = trim($value);
+                
+                // Remove quotes if present
+                if ((substr($value, 0, 1) === '"' && substr($value, -1) === '"') ||
+                    (substr($value, 0, 1) === "'" && substr($value, -1) === "'")) {
+                    $value = substr($value, 1, -1);
+                }
+                
+                // Set environment variable
+                $_ENV[$key] = $value;
+                putenv("$key=$value");
+            }
+        }
     }
 }
 

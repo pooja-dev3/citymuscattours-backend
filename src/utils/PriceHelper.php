@@ -9,10 +9,10 @@ class PriceHelper {
      * Handles strings, floats, and null values from database
      * 
      * @param mixed $value The price value (string, float, or null)
-     * @param int $decimals Number of decimal places (default: 2)
+     * @param int $decimals Number of decimal places (default: 3 for OMR)
      * @return float The rounded price value
      */
-    public static function toFloat($value, $decimals = 2) {
+    public static function toFloat($value, $decimals = 3) {
         if ($value === null || $value === '') {
             return 0.0;
         }
@@ -48,10 +48,10 @@ class PriceHelper {
      * Ensures proper precision is maintained
      * 
      * @param mixed $value The price value
-     * @param int $decimals Number of decimal places (default: 2)
+     * @param int $decimals Number of decimal places (default: 3 for OMR)
      * @return float The formatted price value
      */
-    public static function formatForJson($value, $decimals = 2) {
+    public static function formatForJson($value, $decimals = 3) {
         return self::toFloat($value, $decimals);
     }
     

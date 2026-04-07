@@ -1,0 +1,9 @@
+tran.currency=356
+consumer.language=USA
+tran.action=1
+merchant.receiptURL=http://10.44.71.154/phpnormal/HostedPaymentHashingResult.php
+merchant.errorURL=http://10.44.71.154/phpnormal/HostedPaymentHashingResult.php
+gateway.resource.path=D:\\iPay\\Resource\\133\\cgn\\
+gateway.terminal.tranportalid=ipaysbi130
+gateway.terminal.alias=sbi130
+php.java.bridge.url=http://10.44.71.124:8184/JavaBridge/Java.inc
